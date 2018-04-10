@@ -1718,7 +1718,8 @@ begin
       for i := 0 to l.Count - 1 do begin
         P := l[i];
         // Include to hash tree
-        TCrypto.DoSha256(FHashTree+P^.Op.Sha256,FHashTree);
+        // TCrypto.DoSha256(FHashTree+P^.Op.Sha256,FHashTree);  COMPILER BUG 2.1.6: Using FHashTree as a "out" param can be initialized prior to be updated first parameter!
+        FHashTree := TCrypto.DoSha256(FHashTree+P^.Op.Sha256);
       end;
     Finally
       FHashTreeOperations.UnlockList;
@@ -1816,13 +1817,14 @@ begin
     P^.Op.FPrevious_Signer_updated_block := op.Previous_Signer_updated_block;
     P^.Op.FPrevious_Destination_updated_block := op.FPrevious_Destination_updated_block;
     P^.Op.FPrevious_Seller_updated_block := op.FPrevious_Seller_updated_block;
-    h := op.Sha256;
+    h := FHashTree + op.Sha256;
     P^.Op.FBufferedSha256:=op.FBufferedSha256;
     P^.Op.tag := list.Count;
     // Improvement TOperationsHashTree speed 2.1.6
     // Include to hash tree (Only if CalcNewHashTree=True)
     If (CalcNewHashTree) And (Length(FHashTree)=32) then begin
-      TCrypto.DoSha256(FHashTree+h,FHashTree);
+      // TCrypto.DoSha256(FHashTree+op.Sha256,FHashTree);  COMPILER BUG 2.1.6: Using FHashTree as a "out" param can be initialized prior to be updated first parameter!
+      TCrypto.DoSha256(h,FHashTree);
     end;
     npos := list.Add(P);
     If FindOrderedBySha(list,op.Sha256,i) then begin
