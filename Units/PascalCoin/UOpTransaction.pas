@@ -509,19 +509,12 @@ begin
     end;
   end;
 
-  If Not FSignatureChecked then begin
-    If Not TCrypto.ECDSAVerify(account_signer.accountInfo.accountkey,GetOperationHashToSign(FData),FData.sign) then begin
-      errors := 'Invalid sign';
-      FHasValidSignature := false;
-      exit;
-    end else FHasValidSignature := true;
-    FSignatureChecked:=True;
-  end else begin
-    If Not FHasValidSignature then begin
-      errors := 'Invalid sign';
-      exit;
-    end;
-  end;
+  If Not TCrypto.ECDSAVerify(account_signer.accountInfo.accountkey,GetOperationHashToSign(FData),FData.sign) then begin
+    errors := 'Invalid sign';
+    FHasValidSignature := false;
+    exit;
+  end else FHasValidSignature := true;
+
   FPrevious_Signer_updated_block := account_signer.updated_block;
   FPrevious_Destination_updated_block := account_target.updated_block;
   If (public_key in FData.changes_type) then begin
@@ -609,7 +602,6 @@ begin
   end else begin
     FHasValidSignature := true;
   end;
-  FSignatureChecked:=True;
 end;
 
 function TOpChangeAccountInfo.toString: String;
@@ -660,7 +652,6 @@ begin
   end else begin
     FHasValidSignature := true;
   end;
-  FSignatureChecked:=True;
 end;
 
 function TOpTransaction.DoOperation(AccountTransaction : TPCSafeBoxTransaction; var errors : AnsiString): Boolean;
@@ -738,20 +729,12 @@ begin
   end;
 
   // Check signature
-  If Not FSignatureChecked then begin
-    _h := GetTransactionHashToSign(FData);
-    if (Not TCrypto.ECDSAVerify(sender.accountInfo.accountkey,_h,FData.sign)) then begin
-      errors := 'Invalid sign';
-      FHasValidSignature := false;
-      Exit;
-    end else FHasValidSignature := true;
-    FSignatureChecked:=True;
-  end else begin
-    If Not FHasValidSignature then begin
-      errors := 'Invalid sign';
-      exit;
-    end;
-  end;
+  _h := GetTransactionHashToSign(FData);
+  if (Not TCrypto.ECDSAVerify(sender.accountInfo.accountkey,_h,FData.sign)) then begin
+    errors := 'Invalid sign';
+    FHasValidSignature := false;
+    Exit;
+  end else FHasValidSignature := true;
   //
   FPrevious_Signer_updated_block := sender.updated_block;
   FPrevious_Destination_updated_block := target.updated_block;
@@ -1086,7 +1069,6 @@ begin
     TLog.NewLog(lterror,Classname,'Error signing a new Change key');
     FHasValidSignature := false;
   end else FHasValidSignature := true;
-  FSignatureChecked:=True;
 end;
 
 function TOpChangeKey.DoOperation(AccountTransaction : TPCSafeBoxTransaction; var errors: AnsiString): Boolean;
@@ -1170,19 +1152,11 @@ begin
     end;
   end;
 
-  If Not FSignatureChecked then begin
-    If Not TCrypto.ECDSAVerify(account_signer.accountInfo.accountkey,GetOperationHashToSign(FData),FData.sign) then begin
-      errors := 'Invalid sign';
-      FHasValidSignature := false;
-      exit;
-    end else FHasValidSignature := true;
-    FSignatureChecked:=True;
-  end else begin
-    If Not FHasValidSignature then begin
-      errors := 'Invalid sign';
-      exit;
-    end;
-  end;
+  If Not TCrypto.ECDSAVerify(account_signer.accountInfo.accountkey,GetOperationHashToSign(FData),FData.sign) then begin
+    errors := 'Invalid sign';
+    FHasValidSignature := false;
+    exit;
+  end else FHasValidSignature := true;
 
   FPrevious_Signer_updated_block := account_signer.updated_block;
   FPrevious_Destination_updated_block := account_target.updated_block;
@@ -1394,7 +1368,6 @@ begin
   FData.n_operation := n_operation;
   FData.fee := fee;
   FHasValidSignature := true; // Recover founds doesn't need a signature
-  FSignatureChecked := True;
 end;
 
 function TOpRecoverFounds.DoOperation(AccountTransaction : TPCSafeBoxTransaction; var errors: AnsiString): Boolean;
@@ -1624,19 +1597,11 @@ begin
     exit;
   end;
 
-  If Not FSignatureChecked then begin
-    If Not TCrypto.ECDSAVerify(account_signer.accountInfo.accountkey,GetOperationHashToSign(FData),FData.sign) then begin
-      errors := 'Invalid sign';
-      FHasValidSignature := false;
-      exit;
-    end else FHasValidSignature := true;
-    FSignatureChecked:=True;
-  end else begin
-    If Not FHasValidSignature then begin
-      errors := 'Invalid sign';
-      exit;
-    end;
-  end;
+  If Not TCrypto.ECDSAVerify(account_signer.accountInfo.accountkey,GetOperationHashToSign(FData),FData.sign) then begin
+    errors := 'Invalid sign';
+    FHasValidSignature := false;
+    exit;
+  end else FHasValidSignature := true;
 
   FPrevious_Signer_updated_block := account_signer.updated_block;
   FPrevious_Destination_updated_block := account_target.updated_block;
@@ -1873,7 +1838,6 @@ begin
     TLog.NewLog(lterror,Classname,'Error signing a new list account for sale operation');
     FHasValidSignature := false;
   end else FHasValidSignature := true;
-  FSignatureChecked:=True;
 end;
 
 function TOpListAccountForSale.IsDelist: Boolean;
@@ -1901,7 +1865,6 @@ begin
     TLog.NewLog(lterror,Classname,'Error signing a delist account operation');
     FHasValidSignature := false;
   end else FHasValidSignature := true;
-  FSignatureChecked:=True;
 end;
 
 function TOpDelistAccountForSale.IsDelist: Boolean;
@@ -1937,7 +1900,6 @@ begin
     TLog.NewLog(lterror,Classname,'Error signing a new Buy operation');
     FHasValidSignature := false;
   end else FHasValidSignature := true;
-  FSignatureChecked:=True;
 end;
 
 procedure TOpBuyAccount.InitializeData;

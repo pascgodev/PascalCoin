@@ -155,8 +155,6 @@ Type
   Private
     Ftag: integer;
   Protected
-    FSignatureChecked : Boolean; // Improvement TPCOperation speed 2.1.6
-    //
     FPrevious_Signer_updated_block: Cardinal;
     FPrevious_Destination_updated_block : Cardinal;
     FPrevious_Seller_updated_block : Cardinal;
@@ -1818,8 +1816,6 @@ begin
     P^.Op.FPrevious_Signer_updated_block := op.Previous_Signer_updated_block;
     P^.Op.FPrevious_Destination_updated_block := op.FPrevious_Destination_updated_block;
     P^.Op.FPrevious_Seller_updated_block := op.FPrevious_Seller_updated_block;
-    P^.Op.FHasValidSignature:=op.FHasValidSignature;
-    P^.Op.FSignatureChecked:=op.FSignatureChecked;
     h := op.Sha256;
     P^.Op.FBufferedSha256:=op.FBufferedSha256;
     P^.Op.tag := list.Count;
@@ -2105,7 +2101,6 @@ end;
 
 constructor TPCOperation.Create;
 begin
-  FSignatureChecked := False;
   FHasValidSignature := False;
   FBufferedSha256:='';
   InitializeData;
@@ -2188,7 +2183,6 @@ begin
   FPrevious_Seller_updated_block := 0;
   FHasValidSignature := false;
   FBufferedSha256:='';
-  FSignatureChecked := False;
 end;
 
 function TPCOperation.LoadFromNettransfer(Stream: TStream): Boolean;
