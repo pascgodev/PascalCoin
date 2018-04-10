@@ -63,9 +63,9 @@ Type
     Class Function TargetToCompact(target: TRawBytes): Cardinal;
     Class Function TargetFromCompact(encoded: Cardinal): TRawBytes;
     Class Function GetNewTarget(vteorical, vreal: Cardinal; Const actualTarget: TRawBytes): TRawBytes;
-    Class Procedure CalcProofOfWork_Part1(const operationBlock : TOperationBlock; var Part1 : TRawBytes);
-    Class Procedure CalcProofOfWork_Part3(const operationBlock : TOperationBlock; var Part3 : TRawBytes);
-    Class Procedure CalcProofOfWork(const operationBlock : TOperationBlock; var PoW : TRawBytes);
+    Class Procedure CalcProofOfWork_Part1(const operationBlock : TOperationBlock; out Part1 : TRawBytes);
+    Class Procedure CalcProofOfWork_Part3(const operationBlock : TOperationBlock; out Part3 : TRawBytes);
+    Class Procedure CalcProofOfWork(const operationBlock : TOperationBlock; out PoW : TRawBytes);
   end;
 
   { TAccountComp }
@@ -426,7 +426,7 @@ begin
   end;
 end;
 
-class procedure TPascalCoinProtocol.CalcProofOfWork_Part1(const operationBlock: TOperationBlock; var Part1: TRawBytes);
+class procedure TPascalCoinProtocol.CalcProofOfWork_Part1(const operationBlock: TOperationBlock; out Part1: TRawBytes);
 var ms : TMemoryStream;
   s : AnsiString;
 begin
@@ -448,7 +448,7 @@ begin
   end;
 end;
 
-class procedure TPascalCoinProtocol.CalcProofOfWork_Part3(const operationBlock: TOperationBlock; var Part3: TRawBytes);
+class procedure TPascalCoinProtocol.CalcProofOfWork_Part3(const operationBlock: TOperationBlock; out Part3: TRawBytes);
 var ms : TMemoryStream;
 begin
   ms := TMemoryStream.Create;
@@ -465,7 +465,7 @@ begin
   end;
 end;
 
-class procedure TPascalCoinProtocol.CalcProofOfWork(const operationBlock: TOperationBlock; var PoW: TRawBytes);
+class procedure TPascalCoinProtocol.CalcProofOfWork(const operationBlock: TOperationBlock; out PoW: TRawBytes);
 var ms : TMemoryStream;
   s : AnsiString;
 begin
@@ -2836,16 +2836,6 @@ begin
     errors := 'Target account is locked until block '+Inttostr(P_target^.accountInfo.locked_until_block);
     Exit;
   end;
-  if P_signer^.updated_block <> FFreezedAccounts.BlocksCount then begin
-    P_signer^.previous_updated_block := P_signer^.updated_block;
-    P_signer^.updated_block := FFreezedAccounts.BlocksCount;
-  end;
-  if (signer_account<>target_account) then begin
-    if P_target^.updated_block <> FFreezedAccounts.BlocksCount then begin
-      P_target^.previous_updated_block := P_target^.updated_block;
-      P_target^.updated_block := FFreezedAccounts.BlocksCount;
-    end;
-  end;
   if Not TAccountComp.EqualAccountKeys(P_signer^.accountInfo.accountKey,P_target^.accountInfo.accountKey) then begin
     errors := 'Signer and target have diff key';
     Exit;
@@ -2880,6 +2870,21 @@ begin
     end;
     if (newName<>'') then begin
       FAccountNames_Added.Add(newName,target_account);
+    end;
+  end;
+  // All Ok, can do changes
+  // XXXXXXXXXXXXXXXX
+  // PREVIOUS BUG !!!!
+  // On previous versions (2.1.6) this update change was made prior to check all!
+  // XXXXXXXXXXXXXXXX
+  if P_signer^.updated_block <> FFreezedAccounts.BlocksCount then begin
+    P_signer^.previous_updated_block := P_signer^.updated_block;
+    P_signer^.updated_block := FFreezedAccounts.BlocksCount;
+  end;
+  if (signer_account<>target_account) then begin
+    if P_target^.updated_block <> FFreezedAccounts.BlocksCount then begin
+      P_target^.previous_updated_block := P_target^.updated_block;
+      P_target^.updated_block := FFreezedAccounts.BlocksCount;
     end;
   end;
 
