@@ -34,6 +34,10 @@ Also, consider a donation at PascalCoin development account: "0-10"
 
 ## History:  
 
+### Build 2.1.7 - 2018-04-10
+- Remove use of TPCOperation.FSignatureChecked introduced on 2.1.6 because is not 100% secure
+- Minor bugs
+
 ### Build 2.1.6 - 2018-02-14
 - Important improvements
   - Improved speed when processing operations on start
