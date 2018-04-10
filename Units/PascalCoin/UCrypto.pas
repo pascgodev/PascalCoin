@@ -68,21 +68,23 @@ Type
   TCrypto = Class
   private
   public
-    Class function ToHexaString(const raw : TRawBytes) : AnsiString;
-    Class function HexaToRaw(const HexaString : AnsiString) : TRawBytes;
-    Class function DoSha256(p : PAnsiChar; plength : Cardinal) : TRawBytes; overload;
-    Class function DoSha256(const TheMessage : AnsiString) : TRawBytes; overload;
-    Class procedure DoSha256(const TheMessage : AnsiString; var ResultSha256 : TRawBytes);  overload;
-    Class procedure DoDoubleSha256(p : PAnsiChar; plength : Cardinal; Var ResultSha256 : TRawBytes); overload;
-    Class function DoRipeMD160_HEXASTRING(const TheMessage : AnsiString) : TRawBytes; overload;
-    Class function DoRipeMD160AsRaw(p : PAnsiChar; plength : Cardinal) : TRawBytes; overload;
-    Class function DoRipeMD160AsRaw(const TheMessage : AnsiString) : TRawBytes; overload;
-    Class function PrivateKey2Hexa(Key : PEC_KEY) : AnsiString;
-    Class function ECDSASign(Key : PEC_KEY; const digest : AnsiString) : TECDSA_SIG;
-    Class function ECDSAVerify(EC_OpenSSL_NID : Word; PubKey : EC_POINT; const digest : AnsiString; Signature : TECDSA_SIG) : Boolean; overload;
-    Class function ECDSAVerify(PubKey : TECDSA_Public; const digest : AnsiString; Signature : TECDSA_SIG) : Boolean; overload;
-    Class procedure InitCrypto;
-    Class function IsHumanReadable(Const ReadableText : TRawBytes) : Boolean;
+    class function IsHexString(const AHexString: AnsiString) : boolean;
+    class function ToHexaString(const raw : TRawBytes) : AnsiString;
+    class function HexaToRaw(const HexaString : AnsiString) : TRawBytes;
+    class function DoSha256(p : PAnsiChar; plength : Cardinal) : TRawBytes; overload;
+    class function DoSha256(const TheMessage : AnsiString) : TRawBytes; overload;
+    class procedure DoSha256(const TheMessage : AnsiString; out ResultSha256 : TRawBytes);  overload;
+    class function DoDoubleSha256(const TheMessage : AnsiString) : TRawBytes; overload;
+    class procedure DoDoubleSha256(p : PAnsiChar; plength : Cardinal; out ResultSha256 : TRawBytes); overload;
+    class function DoRipeMD160_HEXASTRING(const TheMessage : AnsiString) : TRawBytes; overload;
+    class function DoRipeMD160AsRaw(p : PAnsiChar; plength : Cardinal) : TRawBytes; overload;
+    class function DoRipeMD160AsRaw(const TheMessage : AnsiString) : TRawBytes; overload;
+    class function PrivateKey2Hexa(Key : PEC_KEY) : AnsiString;
+    class function ECDSASign(Key : PEC_KEY; const digest : AnsiString) : TECDSA_SIG;
+    class function ECDSAVerify(EC_OpenSSL_NID : Word; PubKey : EC_POINT; const digest : AnsiString; Signature : TECDSA_SIG) : Boolean; overload;
+    class function ECDSAVerify(PubKey : TECDSA_Public; const digest : AnsiString; Signature : TECDSA_SIG) : Boolean; overload;
+    class procedure InitCrypto;
+    class function IsHumanReadable(Const ReadableText : TRawBytes) : Boolean;
   End;
 
   TBigNum = Class
@@ -233,10 +235,15 @@ begin
         try
           Result := TECPrivateKey.Create;
           Try
-            Result.SetPrivateKeyFromHexa(ECID,PAC);
+            If Not Result.SetPrivateKeyFromHexa(ECID,PAC) then begin
+              FreeAndNil(Result);
+            end;
           Except
-            FreeAndNil(Result);
-            Raise;
+            On E:Exception do begin
+              FreeAndNil(Result);
+              // Note: Will not raise Exception, only will log it
+              TLog.NewLog(lterror,ClassName,'Error importing private key from '+TCrypto.ToHexaString(raw)+' ECID:'+IntToStr(ECID)+' ('+E.ClassName+'): '+E.Message);
+            end;
           end;
         finally
           OpenSSL_free(PAC);
@@ -295,6 +302,7 @@ var bn : PBIGNUM;
   ctx : PBN_CTX;
   pub_key : PEC_POINT;
 begin
+  Result := False;
   bn := BN_new;
   try
     if BN_hex2bn(@bn,PAnsiChar(hexa))=0 then Raise ECryptoException.Create('Invalid Hexadecimal value:'+hexa);
@@ -302,7 +310,7 @@ begin
     if Assigned(FPrivateKey) then EC_KEY_free(FPrivateKey);
     FEC_OpenSSL_NID := EC_OpenSSL_NID;
     FPrivateKey := EC_KEY_new_by_curve_name(EC_OpenSSL_NID);
-
+    If Not Assigned(FPrivateKey) then Exit;
     if EC_KEY_set_private_key(FPrivateKey,bn)<>1 then raise ECryptoException.Create('Invalid num to set as private key');
     //
     ctx := BN_CTX_new;
@@ -317,6 +325,7 @@ begin
   finally
     BN_free(bn);
   end;
+  Result := True;
 end;
 
 { TCrypto }
@@ -325,15 +334,18 @@ end;
   Note: Delphi is slowly when working with Strings (allowing space)... so to
   increase speed we use a String as a pointer, and only increase speed if
   needed. Also the same with functions "GetMem" and "FreeMem" }
-class procedure TCrypto.DoDoubleSha256(p: PAnsiChar; plength: Cardinal;
-  Var ResultSha256: TRawBytes);
+class procedure TCrypto.DoDoubleSha256(p: PAnsiChar; plength: Cardinal; out ResultSha256: TRawBytes);
 Var PS : PAnsiChar;
-  PC : PAnsiChar;
 begin
   If length(ResultSha256)<>32 then SetLength(ResultSha256,32);
   PS := @ResultSha256[1];
   SHA256(p,plength,PS);
   SHA256(PS,32,PS);
+end;
+
+class function TCrypto.DoDoubleSha256(const TheMessage: AnsiString): TRawBytes;
+begin
+  Result := DoSha256(DoSha256(TheMessage));
 end;
 
 class function TCrypto.DoRipeMD160_HEXASTRING(const TheMessage: AnsiString): TRawBytes;
@@ -388,9 +400,8 @@ end;
   Note: Delphi is slowly when working with Strings (allowing space)... so to
   increase speed we use a String as a pointer, and only increase speed if
   needed. Also the same with functions "GetMem" and "FreeMem" }
-class procedure TCrypto.DoSha256(const TheMessage: AnsiString; var ResultSha256: TRawBytes);
+class procedure TCrypto.DoSha256(const TheMessage: AnsiString; out ResultSha256: TRawBytes);
 Var PS : PAnsiChar;
-  PC : PAnsiChar;
 begin
   If length(ResultSha256)<>32 then SetLength(ResultSha256,32);
   PS := @ResultSha256[1];
@@ -551,6 +562,20 @@ begin
     Result[(i*2)+1] := s[1];
     Result[(i*2)+2] := s[2];
   end;
+end;
+
+class function TCrypto.IsHexString(const AHexString: AnsiString) : boolean;
+var
+  i : Integer;
+begin
+  Result := true;
+  for i := 1 to length(AHexString) do
+    if (NOT (AHexString[i] in ['0'..'9'])) AND
+       (NOT (AHexString[i] in ['a'..'f'])) AND
+       (NOT (AHexString[i] in ['A'..'F'])) then begin
+       Result := false;
+       exit;
+    end;
 end;
 
 { TBigNum }
@@ -835,5 +860,6 @@ end;
 
 
 initialization
+  Randomize; // Initial random generator based on system time
 finalization
 end.
