@@ -240,6 +240,9 @@ begin
     Stream.Position:=p;
     // Write null data until end of header
     GrowStreamUntilPos(Stream,FBlockHeadersFirstBytePosition[iBlockHeaders] + GetBlockHeaderFixedSize,true);
+    // Force to clean Block Headers future rows
+    SetLength(FBlockHeadersFirstBytePosition,iBlockHeaders+1); // Force to clear future blocks on next Block Headers row (Bug solved on 2.1.8)
+    FStreamLastBlockNumber:=Int64(StartingDeleteBlock)-1;
     // End Stream at _Header
     Stream.Size := Stream.Position + _Header.StreamBlockRelStartPos;
   Finally
@@ -917,6 +920,8 @@ begin
     Stream.Write(c,sizeof(_Header.BlockSize));
     // Positioning until Header end
     GrowStreamUntilPos(Stream,_StreamBlockHeaderStartPos + GetBlockHeaderFixedSize,true);
+    // If this is an override, force to clean Block Headers future rows
+    SetLength(FBlockHeadersFirstBytePosition,iBlockHeaders+1); // Force to clear future blocks on next Block Headers row (Bug solved on 2.1.8)
     // And now positioning until Data:
     GrowStreamUntilPos(Stream,_StreamBlockHeaderStartPos + GetBlockHeaderFixedSize + _Header.StreamBlockRelStartPos, false );
     {$IFDEF HIGHLOG}

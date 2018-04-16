@@ -34,6 +34,9 @@ Also, consider a donation at PascalCoin development account: "0-10"
 
 ## History:  
 
+### Build 2.1.8 - 2018-04-16
+- Solved bug that can cause to corrupt BlockChainStream.blocks file when detecting an orphan block and creating new BlockHeaders row (every 1000 blocks). Very rare bug, but fatal error
+
 ### Build 2.1.7 - 2018-04-10
 - Remove use of TPCOperation.FSignatureChecked introduced on 2.1.6 because is not 100% secure
 - Minor bugs
