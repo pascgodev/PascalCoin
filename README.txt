@@ -34,6 +34,9 @@ Also, consider a donation at PascalCoin development account: "0-10"
 
 ## History:  
 
+### Build 2.1.9 - 2018-04-16
+- Searchs last valid block found on corrupted BlockChainStream.blocks file and allows to continue from last valid one. On prior versions, app halted and needed manually file deletion
+
 ### Build 2.1.8 - 2018-04-16
 - Solved bug that can cause to corrupt BlockChainStream.blocks file when detecting an orphan block and creating new BlockHeaders row (every 1000 blocks). Very rare bug, but fatal error
 
