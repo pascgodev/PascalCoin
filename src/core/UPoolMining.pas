@@ -413,7 +413,7 @@ begin
       P^.method:=method;
       FPendingResponseMessages.Add(P);
     end;
-    TLog.NewLog(ltInfo,Classname,'Sending JSON: '+json.ToJSON(false));
+    {$IFDEF HIGHLOG}TLog.NewLog(ltInfo,Classname,'Sending JSON: '+json.ToJSON(false));{$ENDIF}
     stream := TMemoryStream.Create;
     try
       json.SaveToStream(stream);
@@ -547,8 +547,8 @@ begin
       New(P);
       P^.SentDateTime := now;
       P^.SentMinTimestamp := TNetData.NetData.NetworkAdjustedTime.GetAdjustedTime;
-      if (P^.SentMinTimestamp<FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.timestamp) then begin
-        P^.SentMinTimestamp := FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.timestamp;
+      if (P^.SentMinTimestamp<FNodeNotifyEvents.Node.Bank.LastOperationBlock.timestamp) then begin
+        P^.SentMinTimestamp := FNodeNotifyEvents.Node.Bank.LastOperationBlock.timestamp;
       end;
       FillMinerOperations;
       P^.OperationsComp := TPCOperationsComp.Create(Nil);
@@ -557,15 +557,15 @@ begin
       P^.OperationsComp.BlockPayload := FMinerPayload;
       P^.OperationsComp.timestamp := P^.SentMinTimestamp; // Best practices 1.5.3
       OpB := P^.OperationsComp.OperationBlock;
-      if (OpB.block<>0) And (OpB.block <> (FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.block+1)) then begin
+      if (OpB.block<>0) And (OpB.block <> (FNodeNotifyEvents.Node.Bank.LastOperationBlock.block+1)) then begin
         // A new block is generated meanwhile ... do not include
-        TLog.NewLog(ltDebug,ClassName,'Generated a new block meanwhile ... '+TPCOperationsComp.OperationBlockToText(OpB)+'<>'+TPCOperationsComp.OperationBlockToText(FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock));
+        TLog.NewLog(ltDebug,ClassName,'Generated a new block meanwhile ... '+TPCOperationsComp.OperationBlockToText(OpB)+'<>'+TPCOperationsComp.OperationBlockToText(FNodeNotifyEvents.Node.Bank.LastOperationBlock));
         P^.OperationsComp.Free;
         Dispose(P);
         P := Nil;
       end else begin
         i := l.Add(P);
-        TLog.NewLog(ltDebug,ClassName,'Added new job '+IntToStr(i+1)+'/'+IntToStr(l.Count));
+        {$IFDEF HIGHLOG}TLog.NewLog(ltDebug,ClassName,'Added new job '+IntToStr(i+1)+'/'+IntToStr(l.Count));{$ENDIF}
       end;
     end;
     // Clean buffer jobs
@@ -588,7 +588,7 @@ begin
           if Not Active then exit;
           SendJobToMiner(P^.OperationsComp,l2[i] as TJSONRPCTcpIpClient,false,null);
         end;
-        TLog.NewLog(ltDebug,ClassName,'Sending job to miners: '+TPCOperationsComp.OperationBlockToText(P^.OperationsComp.OperationBlock)+' Cache blocks:'+Inttostr(l2.Count));
+        {$IFDEF HIGHLOG}TLog.NewLog(ltDebug,ClassName,'Sending job to miners: '+TPCOperationsComp.OperationBlockToText(P^.OperationsComp.OperationBlock)+' Cache blocks:'+Inttostr(l2.Count));{$ENDIF}
       Finally
         NetTcpIpClientsUnlock;
       End;
@@ -677,19 +677,19 @@ begin
   if method=CT_PoolMining_Method_STATUS then begin
     response_result := TPCJSONObject.Create;
     Try
-      response_result.GetAsVariant('block').Value := FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.block;
-      response_result.GetAsVariant('account_key').Value := TCrypto.ToHexaString( TAccountComp.AccountKey2RawString(FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.account_key) );
-      response_result.GetAsVariant('reward').Value := FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.reward;
-      response_result.GetAsVariant('fee').Value := FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.fee;
-      response_result.GetAsVariant('p_version').Value := FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.protocol_version;
-      response_result.GetAsVariant('p_available').Value := FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.protocol_available;
-      response_result.GetAsVariant('timestamp').Value := FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.timestamp;
-      response_result.GetAsVariant('target').Value := FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.compact_target;
-      response_result.GetAsVariant('nonce').Value := FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.nonce;
-      response_result.GetAsVariant('payload').Value := TCrypto.ToHexaString( FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.block_payload );
-      response_result.GetAsVariant('initial_sbh').Value := TCrypto.ToHexaString( FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.initial_safe_box_hash );
-      response_result.GetAsVariant('operations_hash').Value := TCrypto.ToHexaString( FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.operations_hash );
-      response_result.GetAsVariant('pow').Value := TCrypto.ToHexaString( FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.proof_of_work );
+      response_result.GetAsVariant('block').Value := FNodeNotifyEvents.Node.Bank.LastOperationBlock.block;
+      response_result.GetAsVariant('account_key').Value := TCrypto.ToHexaString( TAccountComp.AccountKey2RawString(FNodeNotifyEvents.Node.Bank.LastOperationBlock.account_key) );
+      response_result.GetAsVariant('reward').Value := FNodeNotifyEvents.Node.Bank.LastOperationBlock.reward;
+      response_result.GetAsVariant('fee').Value := FNodeNotifyEvents.Node.Bank.LastOperationBlock.fee;
+      response_result.GetAsVariant('p_version').Value := FNodeNotifyEvents.Node.Bank.LastOperationBlock.protocol_version;
+      response_result.GetAsVariant('p_available').Value := FNodeNotifyEvents.Node.Bank.LastOperationBlock.protocol_available;
+      response_result.GetAsVariant('timestamp').Value := FNodeNotifyEvents.Node.Bank.LastOperationBlock.timestamp;
+      response_result.GetAsVariant('target').Value := FNodeNotifyEvents.Node.Bank.LastOperationBlock.compact_target;
+      response_result.GetAsVariant('nonce').Value := FNodeNotifyEvents.Node.Bank.LastOperationBlock.nonce;
+      response_result.GetAsVariant('payload').Value := TCrypto.ToHexaString( FNodeNotifyEvents.Node.Bank.LastOperationBlock.block_payload );
+      response_result.GetAsVariant('initial_sbh').Value := TCrypto.ToHexaString( FNodeNotifyEvents.Node.Bank.LastOperationBlock.initial_safe_box_hash );
+      response_result.GetAsVariant('operations_hash').Value := TCrypto.ToHexaString( FNodeNotifyEvents.Node.Bank.LastOperationBlock.operations_hash );
+      response_result.GetAsVariant('pow').Value := TCrypto.ToHexaString( FNodeNotifyEvents.Node.Bank.LastOperationBlock.proof_of_work );
       Client.SendJSONRPCResponse(response_result,id_value);
     Finally
       response_result.Free;
@@ -761,8 +761,8 @@ begin
             FMinerOperations.CopyFrom(LLockedMempool);
           end;
           //
-          TLog.NewLog(ltInfo,ClassName,Format('New miner operations:%d Hash:%s %s',
-            [FMinerOperations.OperationsHashTree.OperationsCount,TCrypto.ToHexaString(FMinerOperations.OperationsHashTree.HashTree),TCrypto.ToHexaString(FMinerOperations.OperationBlock.operations_hash)]));
+          {$IFDEF HIGHLOG}TLog.NewLog(ltdebug,ClassName,Format('New miner operations:%d Hash:%s %s',
+            [FMinerOperations.OperationsHashTree.OperationsCount,TCrypto.ToHexaString(FMinerOperations.OperationsHashTree.HashTree),TCrypto.ToHexaString(FMinerOperations.OperationBlock.operations_hash)]));{$ENDIF}
         end else begin
           TLog.NewLog(ltDebug,ClassName,Format('No need to change Miner buffer. Operations:%d',[FMinerOperations.OperationsHashTree.OperationsCount]));
         end;
@@ -927,12 +927,12 @@ begin
     Try
       if l.count>0 then P := l[l.Count-1] // The last
       else begin
-        TLog.NewLog(ltInfo,ClassName,'Creating new job for miner');
+        //TLog.NewLog(ltInfo,ClassName,'Creating new job for miner');
         New(P);
         P^.SentDateTime := now;
         P^.SentMinTimestamp := TNetData.NetData.NetworkAdjustedTime.GetAdjustedTime;
-        if (P^.SentMinTimestamp<FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.timestamp) then begin
-          P^.SentMinTimestamp := FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.timestamp;
+        if (P^.SentMinTimestamp<FNodeNotifyEvents.Node.Bank.LastOperationBlock.timestamp) then begin
+          P^.SentMinTimestamp := FNodeNotifyEvents.Node.Bank.LastOperationBlock.timestamp;
         end;
         FillMinerOperations;
         P^.OperationsComp := TPCOperationsComp.Create(Nil);
@@ -940,8 +940,8 @@ begin
         P^.OperationsComp.AccountKey := FMinerAccountKey;
         P^.OperationsComp.BlockPayload := FMinerPayload;
         P^.OperationsComp.timestamp := P^.SentMinTimestamp; // Best practices 1.5.3
-        if (P^.OperationsComp.OperationBlock.block<>0) And (P^.OperationsComp.OperationBlock.block <> (FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.block+1)) then begin
-          TLog.NewLog(ltError,ClassName,'ERROR DEV 20170228-2 '+TPCOperationsComp.OperationBlockToText(P^.OperationsComp.OperationBlock)+'<>'+TPCOperationsComp.OperationBlockToText(FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock));
+        if (P^.OperationsComp.OperationBlock.block<>0) And (P^.OperationsComp.OperationBlock.block <> (FNodeNotifyEvents.Node.Bank.LastOperationBlock.block+1)) then begin
+          TLog.NewLog(ltError,ClassName,'ERROR DEV 20170228-2 '+TPCOperationsComp.OperationBlockToText(P^.OperationsComp.OperationBlock)+'<>'+TPCOperationsComp.OperationBlockToText(FNodeNotifyEvents.Node.Bank.LastOperationBlock));
           P^.OperationsComp.Free;
           Dispose(P);
           raise Exception.Create('ERROR DEV 20170228-2');
@@ -972,8 +972,8 @@ begin
     params.GetAsVariant('target_pow').Value := TCrypto.ToHexaString(TPascalCoinProtocol.TargetFromCompact(Operations.OperationBlock.compact_target,Operations.OperationBlock.protocol_version));
 
     ts := TNetData.NetData.NetworkAdjustedTime.GetAdjustedTime;
-    if (ts<FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.timestamp) then begin
-      ts := FNodeNotifyEvents.Node.Bank.LastBlockFound.OperationBlock.timestamp;
+    if (ts<FNodeNotifyEvents.Node.Bank.LastOperationBlock.timestamp) then begin
+      ts := FNodeNotifyEvents.Node.Bank.LastOperationBlock.timestamp;
     end;
     params.GetAsVariant('timestamp').Value := ts;
 
@@ -983,7 +983,7 @@ begin
       Client.SendJSONRPCMethod(CT_PoolMining_Method_MINER_NOTIFY,params,Null);
     end;
 
-    TLog.NewLog(ltInfo,ClassName,
+    TLog.NewLog(ltdebug,ClassName,
       Format('Sending job %d to miner - Block:%d Ops:%d Target:%s PayloadStart:%s',
       [nJobs,Operations.OperationBlock.block,Operations.Count,IntToHex(Operations.OperationBlock.compact_target,8),Operations.OperationBlock.block_payload.ToPrintable]));
   Finally
@@ -1125,7 +1125,7 @@ Var method : String;
   mvfw : TMinerValuesForWork;
   prev_pow,proposed_pow : TRawBytes;
 begin
-  TLog.NewLog(ltInfo,ClassName,'Received JSON: '+json.ToJSON(false));
+  TLog.NewLog(ltdebug,ClassName,'Received JSON: '+json.ToJSON(false));
   params := Nil;
   params_as_object := Nil;
   params_as_array := Nil;

@@ -43,6 +43,32 @@ Type
     width : Integer;
   End;
 
+  TAccountsGrid = Class;
+
+  TAccountsGridFilter = Record
+    MinBalance,
+    MaxBalance : Int64;
+    OrderedAccountsKeyList : TOrderedAccountKeysList;
+    indexAccountsKeyList : Integer;
+  end;
+
+  TAccountsGridUpdateThread = Class(TPCThread)
+    FAccountsGrid : TAccountsGrid;
+    FAccountsGridFilter : TAccountsGridFilter;
+    FBalance : Int64;
+    FIsProcessing : Boolean;
+    FProcessedList : TOrderedCardinalList;
+  protected
+    procedure SynchronizedOnTerminated;
+    procedure BCExecute; override;
+  public
+    constructor Create(AAccountsGrid : TAccountsGrid; AAccountsGridFilter : TAccountsGridFilter);
+    destructor Destroy; override;
+    property IsProcessing : Boolean read FisProcessing;
+  End;
+
+  TAccountsGridDatasource = (acds_Node, acds_InternalList, acds_NodeFiltered);
+
   TAccountsGrid = Class(TComponent)
   private
     FAccountsBalance : Int64;
@@ -50,20 +76,34 @@ Type
     FColumns : Array of TAccountColumn;
     FDrawGrid : TDrawGrid;
     FNodeNotifyEvents : TNodeNotifyEvents;
-    FShowAllAccounts: Boolean;
     FOnUpdated: TNotifyEvent;
-    FAccountsCount: Integer;
     FAllowMultiSelect: Boolean;
+    FAccountsGridUpdateThread : TAccountsGridUpdateThread;
+    FAccountsGridFilter: TAccountsGridFilter;
+    FOnAccountsGridUpdatedData: TNotifyEvent;
+    FAccountsGridDatasource: TAccountsGridDatasource;
+    //
+    FBufferLastAccountNumber : Integer;
+    FBufferLastAccount : TAccount;
+    FBufferNodeAccountsCount : Integer;
+    FBufferNodeBlocksCount : Integer;
+    //
     procedure SetDrawGrid(const Value: TDrawGrid);
     Procedure InitGrid;
+    Procedure InitGridRowCount;
     Procedure OnNodeNewOperation(Sender : TObject);
     procedure OnGridDrawCell(Sender: TObject; ACol, ARow: Longint; Rect: TRect; State: TGridDrawState);
     procedure SetNode(const Value: TNode);
     function GetNode: TNode;
-    procedure SetShowAllAccounts(const Value: Boolean);
     procedure SetAllowMultiSelect(const Value: Boolean);
+    procedure TerminateAccountGridUpdateThread;
+    procedure SetAccountsGridFilter(const Value: TAccountsGridFilter);
+    function GetAccountsCount: Integer;
+    procedure SetAccountsGridDatasource(const Value: TAccountsGridDatasource);
+    procedure UpdateAccountsBalance;
   protected
     procedure Notification(AComponent: TComponent; Operation: TOperation); Override;
+    procedure BufferGetAccount(AAccountNumber : Integer; var AAccount : TAccount; var ANodeBlocksCount, ANodeAccountsCount : Integer);
   public
     Constructor Create(AOwner : TComponent); override;
     Destructor Destroy; override;
@@ -74,13 +114,17 @@ Type
     Function AccountNumber(GridRow : Integer) : Int64;
     Procedure SaveToStream(Stream : TStream);
     Procedure LoadFromStream(Stream : TStream);
-    Property ShowAllAccounts : Boolean read FShowAllAccounts write SetShowAllAccounts;
     Property AccountsBalance : Int64 read FAccountsBalance;
-    Property AccountsCount : Integer read FAccountsCount;
+    Property AccountsCount : Integer read GetAccountsCount;
     Function MoveRowToAccount(nAccount : Cardinal) : Boolean;
     Property OnUpdated : TNotifyEvent read FOnUpdated write FOnUpdated;
     Property AllowMultiSelect : Boolean read FAllowMultiSelect write SetAllowMultiSelect;
     Function SelectedAccounts(accounts : TOrderedCardinalList) : Integer;
+    property AccountsGridFilter : TAccountsGridFilter read FAccountsGridFilter write SetAccountsGridFilter;
+    procedure UpdateData;
+    function IsUpdatingData : Boolean;
+    property OnAccountsGridUpdatedData : TNotifyEvent read FOnAccountsGridUpdatedData write FOnAccountsGridUpdatedData;
+    property AccountsGridDatasource : TAccountsGridDatasource read FAccountsGridDatasource write SetAccountsGridDatasource;
   End;
 
   TOperationsGrid = Class;
@@ -225,13 +269,108 @@ Type
 
 Const
   CT_TBlockChainData_NUL : TBlockChainData = (Block:0;Timestamp:0;BlockProtocolVersion:0;BlockProtocolAvailable:0;OperationsCount:-1;Volume:-1;Reward:0;Fee:0;Target:0;HashRateTargetHs:0;HashRateHs:0;HashRateTargetKhs:0;HashRateKhs:0;MinerPayload:Nil;PoW:Nil;SafeBoxHash:Nil;AccumulatedWork:0;TimeAverage200:0;TimeAverage150:0;TimeAverage100:0;TimeAverage75:0;TimeAverage50:0;TimeAverage25:0;TimeAverage10:0);
-
+  CT_TAccountsGridFilter_NUL : TAccountsGridFilter = (MinBalance:-1;MaxBalance:-1;OrderedAccountsKeyList:Nil;indexAccountsKeyList:-1);
 
 implementation
 
 uses
   Graphics, SysUtils, UTime, UOpTransaction, UConst,
   UFRMPayloadDecoder, ULog;
+
+{ TAccountsGridUpdateThread }
+
+procedure TAccountsGridUpdateThread.BCExecute;
+Var
+  l : TOrderedCardinalList;
+  i,j : Integer;
+  c  : Cardinal;
+  LApplyfilter : Boolean;
+  LAccount : TAccount;
+  LNode : TNode;
+begin
+  LApplyfilter := ((FAccountsGridFilter.MinBalance>0) Or ((FAccountsGridFilter.MaxBalance>=0) And (FAccountsGridFilter.MaxBalance<CT_MaxWalletAmount)));
+  FBalance := 0;
+  LNode := FAccountsGrid.Node;
+  try
+      if (Assigned(FAccountsGridFilter.OrderedAccountsKeyList)) then begin
+        if (FAccountsGridFilter.indexAccountsKeyList<0) then i := 0
+        else i := FAccountsGridFilter.indexAccountsKeyList;
+
+        while (Not Terminated) and (i<FAccountsGridFilter.OrderedAccountsKeyList.Count)
+          and ((FAccountsGridFilter.indexAccountsKeyList<0) or (FAccountsGridFilter.indexAccountsKeyList=i)) do begin
+
+          LNode.bank.SafeBox.StartThreadSafe;
+          FAccountsGridFilter.OrderedAccountsKeyList.Lock; // Protection v4
+          Try
+            l := FAccountsGridFilter.OrderedAccountsKeyList.AccountKeyList[i];
+            for j := 0 to l.Count - 1 do begin
+              LAccount := LNode.Bank.SafeBox.Account(l.Get(j));
+              if LApplyfilter then begin
+                if (LAccount.balance>=FAccountsGridFilter.MinBalance) And ((FAccountsGridFilter.MaxBalance<0) Or (LAccount.balance<=FAccountsGridFilter.MaxBalance)) then begin
+                  FProcessedList.Add(LAccount.account);
+                  FBalance := FBalance + LAccount.balance;
+                end;
+              end else begin
+                FProcessedList.Add(LAccount.account);
+                FBalance := FBalance + LAccount.balance;
+              end;
+              if Terminated then Exit;
+            end;
+          finally
+            FAccountsGridFilter.OrderedAccountsKeyList.Unlock;
+            LNode.Bank.SafeBox.EndThreadSave;
+          end;
+          inc(i);
+        end;
+      end else begin
+        c := 0;
+        while (c<LNode.Bank.SafeBox.AccountsCount) and (Not Terminated) do begin
+          LAccount := LNode.Bank.SafeBox.Account(c);
+          if (LAccount.balance>=FAccountsGridFilter.MinBalance) And ((FAccountsGridFilter.MaxBalance<0) Or (LAccount.balance<=FAccountsGridFilter.MaxBalance)) then begin
+            FProcessedList.Add(LAccount.account);
+            FBalance := FBalance + LAccount.balance;
+          end;
+          inc(c);
+        end;
+      end;
+  Finally
+    FisProcessing := False;
+    if Not Terminated then
+      Synchronize(SynchronizedOnTerminated);
+  End;
+end;
+
+constructor TAccountsGridUpdateThread.Create(AAccountsGrid: TAccountsGrid; AAccountsGridFilter: TAccountsGridFilter);
+begin
+  inherited Create(True);
+  FreeOnTerminate := False;
+  FAccountsGrid := AAccountsGrid;
+  FAccountsGridFilter := AAccountsGridFilter;
+  FisProcessing := True;
+  FProcessedList := TOrderedCardinalList.Create;
+  Suspended := False;
+end;
+
+destructor TAccountsGridUpdateThread.Destroy;
+begin
+  FreeAndNil(FProcessedList);
+  inherited;
+end;
+
+procedure TAccountsGridUpdateThread.SynchronizedOnTerminated;
+var LacclTemp : TOrderedCardinalList;
+begin
+  if Not Terminated then begin
+    FAccountsGrid.FAccountsBalance := FBalance;
+    LacclTemp := FAccountsGrid.LockAccountsList;
+    try
+      LacclTemp.CopyFrom( FProcessedList );
+    finally
+      FAccountsGrid.UnlockAccountsList;
+    end;
+    if Assigned(FAccountsGrid.FOnAccountsGridUpdatedData) then  FAccountsGrid.FOnAccountsGridUpdatedData(FAccountsGrid);
+  end;
+end;
 
 { TAccountsGrid }
 
@@ -241,13 +380,28 @@ Const CT_ColumnHeader : Array[TAccountColumnType] Of String =
 function TAccountsGrid.AccountNumber(GridRow: Integer): Int64;
 begin
   if GridRow<1 then Result := -1
-  else if FShowAllAccounts then begin
+  else if (FAccountsGridDatasource=acds_Node) then begin
     if Assigned(Node) then begin
       Result := GridRow-1;
     end else Result := -1;
   end else if GridRow<=FAccountsList.Count then begin
     Result := (FAccountsList.Get(GridRow-1));
   end else Result := -1;
+end;
+
+procedure TAccountsGrid.BufferGetAccount(AAccountNumber: Integer;
+  var AAccount: TAccount; var ANodeBlocksCount, ANodeAccountsCount: Integer);
+begin
+  if FBufferLastAccountNumber<>AAccountNumber then begin
+    FBufferNodeAccountsCount := Node.Bank.AccountsCount;
+    if (AAccountNumber>=FBufferNodeAccountsCount) then FBufferLastAccount := CT_Account_NUL
+    else FBufferLastAccount := Node.GetMempoolAccount(AAccountNumber);
+    FBufferNodeBlocksCount := Node.Bank.BlocksCount;
+    FBufferLastAccountNumber := AAccountNumber;
+  end;
+  AAccount := FBufferLastAccount;
+  ANodeBlocksCount := FBufferNodeBlocksCount;
+  ANodeAccountsCount := FBufferNodeAccountsCount;
 end;
 
 constructor TAccountsGrid.Create(AOwner: TComponent);
@@ -257,8 +411,6 @@ begin
   FAllowMultiSelect := false;
   FOnUpdated := Nil;
   FAccountsBalance := 0;
-  FAccountsCount := 0;
-  FShowAllAccounts := false;
   FAccountsList := TOrderedCardinalList.Create;
   FDrawGrid := Nil;
   SetLength(FColumns,7);
@@ -278,13 +430,30 @@ begin
   FColumns[6].width := 25;
   FNodeNotifyEvents := TNodeNotifyEvents.Create(Self);
   FNodeNotifyEvents.OnOperationsChanged := OnNodeNewOperation;
+  FAccountsGridUpdateThread := Nil;
+  FOnAccountsGridUpdatedData := Nil;
+  FAccountsGridFilter := CT_TAccountsGridFilter_NUL;
+  FAccountsGridDatasource := acds_Node;
+  FBufferLastAccountNumber := -1;
 end;
 
 destructor TAccountsGrid.Destroy;
 begin
+  TerminateAccountGridUpdateThread;
   FNodeNotifyEvents.Free;
   FAccountsList.Free;
   inherited;
+end;
+
+function TAccountsGrid.GetAccountsCount: Integer;
+begin
+  if Not Assigned(Node) then Exit(0);
+
+  case FAccountsGridDatasource of
+    acds_Node: Result := Node.Bank.AccountsCount;
+  else
+    Result := FAccountsList.Count;
+  end;
 end;
 
 function TAccountsGrid.GetNode: TNode;
@@ -294,27 +463,9 @@ end;
 
 procedure TAccountsGrid.InitGrid;
 Var i : Integer;
-  acc : TAccount;
 begin
-  FAccountsBalance := 0;
-  FAccountsCount := FAccountsList.Count;
   if Not assigned(DrawGrid) then exit;
-  if FShowAllAccounts then begin
-    if Assigned(Node) then begin
-      if Node.Bank.AccountsCount<1 then DrawGrid.RowCount := 2
-      else DrawGrid.RowCount := Node.Bank.AccountsCount+1;
-      FAccountsBalance := Node.Bank.SafeBox.TotalBalance;
-    end else DrawGrid.RowCount := 2;
-  end else begin
-    if FAccountsList.Count<1 then DrawGrid.RowCount := 2
-    else DrawGrid.RowCount := FAccountsList.Count+1;
-    if Assigned(Node) then begin
-      for i := 0 to FAccountsList.Count - 1 do begin
-        acc := Node.Bank.SafeBox.Account( FAccountsList.Get(i) );
-        inc(FAccountsBalance, acc.balance);
-      end;
-    end;
-  end;
+  InitGridRowCount;
   DrawGrid.FixedRows := 1;
   if Length(FColumns)=0 then DrawGrid.ColCount := 1
   else DrawGrid.ColCount := Length(FColumns);
@@ -328,8 +479,33 @@ begin
     {goColMoving, goEditing, }goTabs, goRowSelect, {goAlwaysShowEditor,}
     goThumbTracking{$IFnDEF FPC}, goFixedColClick, goFixedRowClick, goFixedHotTrack{$ENDIF}];
   if FAllowMultiSelect then DrawGrid.Options := DrawGrid.Options + [goRangeSelect];
+  FBufferLastAccountNumber := -1;
   FDrawGrid.Invalidate;
   if Assigned(FOnUpdated) then FOnUpdated(Self);
+end;
+
+procedure TAccountsGrid.InitGridRowCount;
+var LRowCount : Integer;
+begin
+  if Not assigned(DrawGrid) then exit;
+  if FAccountsGridDatasource=acds_Node then begin
+    if Assigned(Node) then begin
+      if Node.Bank.AccountsCount<1 then LRowCount := 2
+      else LRowCount := Node.Bank.AccountsCount+1;
+    end else LRowCount := 2;
+  end else begin
+    if FAccountsList.Count<1 then LRowCount := 2
+    else LRowCount := FAccountsList.Count+1;
+  end;
+  if DrawGrid.RowCount<>LRowCount then DrawGrid.RowCount:=LRowCount;
+  FBufferLastAccountNumber := -1;
+  FDrawGrid.Invalidate;
+end;
+
+function TAccountsGrid.IsUpdatingData: Boolean;
+begin
+  if Assigned(FAccountsGridUpdateThread) then Result := FAccountsGridUpdateThread.IsProcessing
+  else Result := False;
 end;
 
 procedure TAccountsGrid.LoadFromStream(Stream: TStream);
@@ -364,7 +540,7 @@ begin
   if Not Assigned(FDrawGrid) then exit;
   if Not Assigned(Node) then exit;
   if FDrawGrid.RowCount<=1 then exit;
-  if FShowAllAccounts then begin
+  if FAccountsGridDatasource=acds_Node then begin
     If (FDrawGrid.RowCount>nAccount+1) And (nAccount>=0) And (nAccount<Node.Bank.AccountsCount) then begin
       FDrawGrid.Row := nAccount+1;
       Result := true;
@@ -441,7 +617,8 @@ Begin
 end;
 {$ENDIF}
 
-procedure TAccountsGrid.OnGridDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect; State: TGridDrawState);
+procedure TAccountsGrid.OnGridDrawCell(Sender: TObject; ACol, ARow: Longint;
+  Rect: TRect; State: TGridDrawState);
   Function FromColorToColor(colorstart,colordest : Integer; step,totalsteps : Integer) : Integer;
   var sr,sg,sb,dr,dg,db : Byte;
     i : Integer;
@@ -464,6 +641,7 @@ Var C : TAccountColumn;
   n_acc : Int64;
   account : TAccount;
   ndiff : Cardinal;
+  LNodeBlocksCount,LNodeAccountsCount : Integer;
 begin
   if Not Assigned(Node) then exit;
 
@@ -481,9 +659,8 @@ begin
   end else begin
     n_acc := AccountNumber(ARow);
     if (n_acc>=0) then begin
-      if (n_acc>=Node.Bank.AccountsCount) then account := CT_Account_NUL
-      else account := Node.GetMempoolAccount(n_acc);
-      ndiff := Node.Bank.BlocksCount - account.updated_block;
+      BufferGetAccount(n_acc,account,LNodeBlocksCount,LNodeAccountsCount);
+      ndiff := LNodeBlocksCount - account.updated_block;
       if (gdSelected in State) then
         If (gdFocused in State) then DrawGrid.Canvas.Brush.Color := clGradientActiveCaption
         else DrawGrid.Canvas.Brush.Color := clGradientInactiveCaption
@@ -521,7 +698,7 @@ begin
           Canvas_TextRect(DrawGrid.Canvas,Rect,s,State,[tfRight,tfVerticalCenter,tfSingleLine]);
         End;
         act_updated_state : Begin
-          if TAccountComp.IsAccountBlockedByProtocol(account.account,Node.Bank.BlocksCount) then begin
+          if TAccountComp.IsAccountBlockedByProtocol(account.account,LNodeBlocksCount) then begin
             DrawGrid.Canvas.Brush.Color := clRed;
           end else if ndiff=0 then begin
             DrawGrid.Canvas.Brush.Color := RGB(255,128,0);
@@ -545,7 +722,7 @@ begin
             // Show price for sale
             s := TAccountComp.FormatMoney(account.accountInfo.price);
             if TAccountComp.IsAccountForSaleAcceptingTransactions(account.accountInfo) then begin
-              if TAccountComp.IsAccountLocked(account.accountInfo,Node.Bank.BlocksCount) then begin
+              if TAccountComp.IsAccountLocked(account.accountInfo,LNodeBlocksCount) then begin
                 DrawGrid.Canvas.Font.Color := clNavy;
               end else begin
                 DrawGrid.Canvas.Font.Color := clRed;
@@ -566,6 +743,7 @@ end;
 
 procedure TAccountsGrid.OnNodeNewOperation(Sender: TObject);
 begin
+  FBufferLastAccountNumber := -1;
   If Assigned(FDrawGrid) then FDrawGrid.Invalidate;
 end;
 
@@ -608,6 +786,19 @@ begin
   Result := accounts.Count;
 end;
 
+procedure TAccountsGrid.SetAccountsGridDatasource(const Value: TAccountsGridDatasource);
+begin
+  if FAccountsGridDatasource=Value then Exit;
+  FAccountsGridDatasource := Value;
+  UpdateData;
+end;
+
+procedure TAccountsGrid.SetAccountsGridFilter(const Value: TAccountsGridFilter);
+begin
+  FAccountsGridFilter := Value;
+  UpdateData;
+end;
+
 procedure TAccountsGrid.SetAllowMultiSelect(const Value: Boolean);
 begin
   FAllowMultiSelect := Value;
@@ -621,7 +812,7 @@ begin
   if Assigned(Value) then begin
     Value.FreeNotification(self);
     FDrawGrid.OnDrawCell := OnGridDrawCell;
-    InitGrid;
+    UpdateData;
   end;
 end;
 
@@ -629,19 +820,56 @@ procedure TAccountsGrid.SetNode(const Value: TNode);
 begin
   if GetNode=Value then exit;
   FNodeNotifyEvents.Node := Value;
-  InitGrid;
+  UpdateData;
 end;
 
-procedure TAccountsGrid.SetShowAllAccounts(const Value: Boolean);
+procedure TAccountsGrid.TerminateAccountGridUpdateThread;
 begin
-  if FShowAllAccounts=Value then exit;
-  FShowAllAccounts := Value;
-  InitGrid;
+  if Assigned(FAccountsGridUpdateThread) then begin
+    FAccountsGridUpdateThread.Terminate;
+    FAccountsGridUpdateThread.WaitFor;
+    FreeAndNil(FAccountsGridUpdateThread);
+  end;
 end;
 
 procedure TAccountsGrid.UnlockAccountsList;
 begin
-  InitGrid;
+  UpdateAccountsBalance;
+  InitGridRowCount;
+end;
+
+procedure TAccountsGrid.UpdateAccountsBalance;
+var i : Integer;
+  LAcc : TAccount;
+begin
+  if Assigned(Node) then begin
+    case FAccountsGridDatasource of
+      acds_Node: FAccountsBalance := Node.Bank.SafeBox.TotalBalance;
+      acds_InternalList: begin
+        FAccountsBalance := 0;
+        for i := 0 to FAccountsList.Count - 1 do begin
+          LAcc := Node.Bank.SafeBox.Account( FAccountsList.Get(i) );
+          inc(FAccountsBalance, LAcc.balance);
+        end;
+      end;
+    end;
+  end;
+end;
+
+procedure TAccountsGrid.UpdateData;
+begin
+  UpdateAccountsBalance;
+  if Assigned(Node) then begin
+    case FAccountsGridDatasource of
+      acds_NodeFiltered: begin
+        TerminateAccountGridUpdateThread;
+        FAccountsBalance := 0;
+        FAccountsGridUpdateThread := TAccountsGridUpdateThread.Create(Self,AccountsGridFilter);
+      end;
+    end;
+  end;
+  InitGridRowCount;
+  if Assigned(FOnAccountsGridUpdatedData) then FOnAccountsGridUpdatedData(Self);
 end;
 
 { TOperationsGridUpdateThread }
